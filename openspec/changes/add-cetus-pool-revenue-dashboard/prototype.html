@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>原型：Cetus USDC/SUI 收入看板</title>
+<style>
+body{margin:0;font-family:system-ui,"Microsoft YaHei",sans-serif;background:#f4f5f7;color:#1f2933;font-size:14px}
+.proto{background:#fff3cd;color:#7a5b00;padding:6px 24px;font-size:13px;display:flex;gap:12px;align-items:center}
+.proto button{border:1px solid #c9a227;background:#fff;border-radius:4px;padding:2px 8px;cursor:pointer}.proto button.on{background:#c9a227;color:#fff}
+header{background:#fff;padding:14px 24px;border-bottom:1px solid #e3e6ea;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:18px;margin:0}.meta{color:#66788a;font-size:12px;text-align:right;line-height:1.6}
+.stale{display:none;background:#fdecea;color:#a12622;padding:8px 24px;font-size:13px}
+main{max-width:1180px;margin:0 auto;padding:16px 24px}
+section{background:#fff;border:1px solid #e3e6ea;border-radius:8px;padding:16px 20px;margin-bottom:16px}
+h2{font-size:15px;margin:0 0 12px}.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.card{border:1px solid #edf0f3;border-radius:6px;padding:10px 12px}.lbl{color:#66788a;font-size:12px}
+.val{font-size:20px;font-weight:600;margin:4px 0}.sub{color:#66788a;font-size:12px;line-height:1.5}
+.addr{font-family:monospace;font-size:13px}a{color:#1a6fd6;text-decoration:none}
+table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #edf0f3}th{color:#66788a;font-weight:500;font-size:12px}
+.tip{display:inline-block;width:14px;height:14px;border-radius:50%;background:#dfe4ea;color:#4a5b6c;font-size:11px;text-align:center;line-height:14px;cursor:help}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px}.seg button{border:1px solid #cfd6de;background:#fff;padding:3px 10px;cursor:pointer}.seg button.on{background:#1a6fd6;color:#fff;border-color:#1a6fd6}
+.note{color:#66788a;font-size:12px;margin-top:6px}.formula{grid-column:span 2;background:#f7f9fb;border-left:3px solid #1a6fd6;padding:8px 12px;font-size:12px;line-height:1.8;color:#3d4f61}.formula code{background:#e8eef5;padding:1px 5px;border-radius:3px}svg{width:100%;height:240px}.legend span{margin-right:12px;font-size:12px;color:#66788a}
+</style></head><body>
+<div class="proto">原型，所有数字为示例数据。状态演示：
+<button data-s="normal" class="on">正常</button><button data-s="stale">Cetus 统计过期</button><button data-s="diff">数据源不一致</button></div>
+<header><h1>Cetus USDC/SUI 0.25% 池 · 收入看板</h1>
+<div class="meta">链上快照最后采集：2026-10-30 16:00（UTC+8）<br>Cetus 成交统计最后采集：<span id="statsTime">2026-10-30 16:00（UTC+8）</span><br>GeckoTerminal K 线最后采集：2026-10-30 16:00（UTC+8）</div></header>
+<div class="stale" id="stale">⚠ 数据已过期：Cetus 成交统计最后成功采集于 2026-10-30 13:00（UTC+8），已超过 2 小时。</div>
+<main>
+<section><h2>池子基本信息</h2>
+<div class="grid">
+<div class="card" style="grid-column:span 2"><div class="lbl">池地址</div><div class="addr" style="margin:6px 0">0xb8d7d9e6…e2c90105 <a href="#" title="复制">⧉</a></div>
+<div class="sub"><a href="https://app.cetus.zone/clmm?poolAddress=0xb8d7d9e66a60c239e7a60110efcf8de6c705580ed924d0dde141f4a0e2c90105" target="_blank">在 Cetus 打开 ↗</a></div></div>
+<div class="card"><div class="lbl">交易手续费率</div><div class="val">0.25%</div><div class="sub">Pool.fee_rate = 2500</div></div>
+<div class="card"><div class="lbl">协议抽成</div><div class="val">20%</div><div class="sub">GlobalConfig.protocol_fee_rate = 2000</div></div>
+<div class="card"><div class="lbl">LP 实际手续费率</div><div class="val">0.20%</div><div class="sub">0.25% × (1 − 20%)</div></div>
+</div>
+<table><tr><th>激励代币</th><th>结算方式</th><th>每秒发放</th><th>每天发放</th></tr>
+<tr><td>CETUS</td><td rowspan="2" class="sub">按秒连续发放，按活跃流动性份额实时累计；<br>LP 需主动领取（claim）才到账，没有固定结算周期</td><td>0.02315</td><td>2,000</td></tr>
+<tr><td>SUI</td><td>0.02528</td><td>2,184</td></tr></table>
+</section>
+<section><h2>池子收入信息</h2>
+<div class="grid">
+<div class="card"><div class="lbl">当前价格</div><div class="val">0.9156</div><div class="sub">USDC / SUI<br>checkpoint 339,812,004 · 16:02</div></div>
+<div class="card"><div class="lbl">当前活跃流动性 L</div><div class="val">2.86e14</div><div class="sub">原始单位，覆盖当前 tick 的仓位之和<br>
+<span style="color:#1f2933">推过当前一格（0.60%）约需 $2.6 万成交</span> <span class="tip" title="当前 tick 段：[69960, 70020)，SUI 价格 0.9104 – 0.9159，段宽 0.60%
+整段深度：约 25,926 USDC，或 28,392 SUI（≈ $25,996）
+从当前价 0.9156 出发：
+· 跌到 0.9104 前，池子可付出约 24,627 USDC
+· 涨到 0.9159 前，池子可付出约 1,418 SUI（≈ $1,298）
+
+段内 L 不变，所以是精确值；但它只是 L 的换算，会随 L 一起大幅变化。
+段宽由 tick_spacing（本池 60）决定，不同池子之间不能直接比较。">i</span><br>checkpoint 339,812,004 · 16:02</div></div>
+<div class="card"><div class="lbl">24h 全池手续费</div><div class="val" id="fee24">13,275.84</div><div class="sub" id="fee24sub">USDC，协议抽成前<br>LP 净额 10,620.67 · 成交量 5,310,334<br>来源：Cetus 官方统计 · 采样 16:00</div>
+<div class="sub" id="check" style="margin-top:6px;padding-top:6px;border-top:1px dashed #e3e6ea"></div></div>
+<div class="card"><div class="lbl">24h 激励收入</div><div class="val">2,041.9</div><div class="sub">USDC<br>CETUS 2,000 个 ≈ 42.2<br>SUI 2,184 个 ≈ 1,999.7<br>窗口 10-29 16:00 – 10-30 16:00</div></div>
+<div class="card"><div class="lbl">24h 单位 L 手续费 <span class="tip" title="1 单位原始 L 在窗口内一直处于活跃状态能分到的 LP 手续费（已扣协议抽成），由 fee_growth_global 首尾差值计算。原始 L = 人类单位 L × √(10^6 × 10^9)。1e12 原始 L 对应的资金量取决于区间宽度：±10% 约 $3,000，全区间约 $60,000。">i</span></div>
+<div class="val">10.5</div><div class="sub">USDC / 每 1e12 原始 L<br>窗口 10-29 16:00 – 10-30 16:00</div>
+<div class="sub" style="margin-top:6px;padding-top:6px;border-top:1px dashed #e3e6ea;color:#1f2933">示例：$10,000 仓位 24h 手续费（按在区间内时间折算） <span class="tip" title="窗口起点 10-29 16:00 按价格 0.9156 开仓，区间边界向外对齐到 tick_spacing（60）的整数倍。
+24h 手续费 = Σ 24 小时 [ L_raw × 该小时单位 L 手续费 × 该小时在区间内比例 ]
+口径与下方「示例仓位每日手续费」曲线相同。
+
+±1%：区间 0.9049 – 0.9269（实际宽 2.4%）
+  L_raw ≈ 2.76e13，开仓约 5,588 SUI + 4,883 USDC
+  在区间内 8.0 / 24 小时 → ≈ $96.6
+±10%：区间 0.8221 – 1.0081（实际宽 22.6%）
+  L_raw ≈ 3.32e12，开仓约 5,162 SUI + 5,273 USDC
+  在区间内 24.0 / 24 小时 → ≈ $34.9
+
+不计自身加入后的稀释、激励收入和无常损失。">i</span><br>
+±1% ≈ <b>$96.6</b>（在区间内 8.0 h）· ±10% ≈ <b>$34.9</b>（24.0 h）</div></div>
+</div></section>
+<section><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">历史趋势</h2>
+<div class="seg"><button data-n="7" class="on">近 7 天</button><button data-n="14">近 14 天</button><button data-n="30">近 30 天</button></div></div>
+<div class="legend" style="margin-top:10px"><span>■ 正常（24 根 K 线）</span><span style="color:#8fb3e8">▨ 不完整（K 线少于 24 根）</span><span style="color:#a12622">缺失</span>
+<span style="float:right">每日曲线来源：GeckoTerminal 小时 K 线，按 UTC+8 自然日汇总，首次运行回补 30 天</span></div>
+<div class="charts" style="margin-top:8px">
+<div style="grid-column:span 2"><div class="lbl">每日全池手续费（USDC，协议抽成前）</div><svg id="fee" viewBox="0 0 560 240"></svg>
+<div class="note">= 当日 24 根小时 K 线美元成交量之和 × 0.25%。悬停查看数值。</div></div>
+<div><div class="lbl">$10,000 ±1% 仓位每日手续费（USDC，按在区间内时间折算）</div><svg id="pos1" viewBox="0 0 560 240"></svg></div>
+<div><div class="lbl">$10,000 ±10% 仓位每日手续费（USDC，按在区间内时间折算）</div><svg id="pos10" viewBox="0 0 560 240"></svg></div>
+<div class="formula"><b>计算方法</b><br>
+① 每天 00:00（UTC+8）按当时价格重新开一个 $10,000 仓位，区间边界向外对齐到 60 tick 的整数倍，当天 L_raw 不变。<br>
+② 当日手续费 = <code>Σ 当天 24 小时 [ L_raw × 该小时单位 L 手续费 × 该小时在区间内比例 ]</code><br>
+③ 该小时单位 L 手续费 = 相邻两个整点快照的 fee_growth_global 差值（a 侧按 USDC，b 侧按该小时 SUI 价格折算）。<br>
+④ 在区间内比例 = <code>该小时 K 线 [最低, 最高] 与仓位区间重叠的长度 ÷ (最高 − 最低)</code>，假设一小时内价格均匀分布、手续费均匀产生。<br>
+不计自身加入后的稀释、激励收入和无常损失；无常损失归入成本部分另算。</div>
+<div style="grid-column:span 2"><div class="lbl">整点快照活跃流动性 L（原始单位，对数刻度）</div><svg id="liq" viewBox="0 0 1120 240"></svg>
+<div class="note">快照 L 是整点取样，一周内可相差约 100 倍；不能用"快照 L × 时长"反推手续费。断开处为缺失整点。</div></div>
+</div></section>
+</main>
+<script>
+let N=7,S='normal';const END=new Date(2026,9,29);
+const md=d=>String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+// 示例数据：每日美元成交量、成交量加权 SUI 均价、K 线根数
+const VOL={},PXD={},NK={};
+(()=>{let s=7;const r=()=>(s=(s*16807)%2147483647)/2147483647;
+ for(let i=29;i>=0;i--){const d=new Date(END);d.setDate(d.getDate()-i);const k=md(d);VOL[k]=1.1e6+r()*2.2e6;PXD[k]=1.2-0.28*(29-i)/29+(r()-.5)*.04;NK[k]=24}
+ Object.assign(VOL,{'10-24':1247748,'10-25':1750597,'10-26':1705390,'10-27':1146845,'10-28':2736118,'10-29':5902860});
+ Object.assign(PXD,{'10-24':0.922,'10-25':0.916,'10-26':0.913,'10-27':0.930,'10-28':0.928,'10-29':0.8841});NK['10-27']=22})();
+// 示例数据：每天在区间内的小时数（±1% / ±10%）
+const IN1={},IN10={};(()=>{let s=11;const r=()=>(s=(s*16807)%2147483647)/2147483647;
+ for(let i=29;i>=0;i--){const d=new Date(END);d.setDate(d.getDate()-i);const k=md(d);IN1[k]=5+r()*15;IN10[k]=20+r()*4}
+ Object.assign(IN1,{'10-29':3.4,'10-28':8.1,'10-25':17.6});Object.assign(IN10,{'10-29':14.2,'10-27':21.6})})();
+// 每 1e12 原始 L 每小时手续费 ≈ 美元成交量 × 0.2% ÷ 4.06e14 有效 L × 1e12 ÷ 24
+const posFee=(d,L,inH)=>L/1e12*(d.usd*0.002/4.06e14*1e12/24)*inH;
+const ns='http://www.w3.org/2000/svg',el=(t,a,p)=>{const e=document.createElementNS(ns,t);for(const k in a)e.setAttribute(k,a[k]);p&&p.appendChild(e);return e};
+function days(){return[...Array(N)].map((_,i)=>{const d=new Date(END);d.setDate(d.getDate()-(N-1-i));const k=md(d);const n=NK[k]||0;
+ return{k,usd:VOL[k],fee:VOL[k]*0.0025,sui:VOL[k]/PXD[k],px:PXD[k],n,st:n===0?'missing':n<24?'approx':'ok'}})}
+function bars(id,val,max,ticks,fmt,tip){const g=document.getElementById(id);g.innerHTML='';const ds=days();
+ const L=50,R=550,T=15,B=205,w=(R-L)/N;
+ for(const y of ticks){const yy=B-(B-T)*y/max;el('line',{x1:L,x2:R,y1:yy,y2:yy,stroke:'#edf0f3'},g);el('text',{x:L-6,y:yy+4,'text-anchor':'end','font-size':10,fill:'#8a99a8'},g).textContent=fmt(y)}
+ ds.forEach((d,i)=>{const x=L+i*w;
+  if(d.st==='none'){el('rect',{x:x+1,y:T,width:w-2,height:B-T,fill:'#f6f7f9'},g)}
+  else if(d.st==='missing'){el('text',{x:x+w/2,y:B-6,'text-anchor':'middle','font-size':10,fill:'#a12622'},g).textContent='缺失'}
+  else{const h=(B-T)*val(d)/max,r=el('rect',{x:x+w*.18,y:B-h,width:w*.64,height:h,fill:d.st==='ok'?'#1a6fd6':'#8fb3e8','stroke-dasharray':d.st==='approx'?'3 2':'',stroke:d.st==='approx'?'#1a6fd6':''},g);
+   el('title',{},r).textContent=tip(d)+`\nK 线：${d.n} 根\n状态：${d.st==='ok'?'正常':'不完整'}`}
+  if(N<=14||i%3===0)el('text',{x:x+w/2,y:B+16,'text-anchor':'middle','font-size':10,fill:'#66788a'},g).textContent=d.k});
+ return ds}
+const fmt0=v=>Math.round(v).toLocaleString();
+function feeChart(){bars('fee',d=>d.fee,16000,[0,5000,10000,15000],y=>y/1000+'k',d=>`${d.k}：${fmt0(d.fee)} USDC\n美元成交量：$${fmt0(d.usd)}`)}
+function posChart(id,pct,L0,IN,max,ticks){bars(id,d=>posFee(d,L0*Math.sqrt(0.9156/d.px),IN[d.k]),max,ticks,y=>'$'+y,
+ d=>{const L=L0*Math.sqrt(0.9156/d.px),w=pct===1?0.012:0.11;
+  return `${d.k}：$${posFee(d,L,IN[d.k]).toFixed(1)}\n开仓价：${d.px.toFixed(4)}\n区间：${(d.px*(1-w)).toFixed(4)} – ${(d.px*(1+w)).toFixed(4)}（±${pct}%，已对齐）\nL_raw：${L.toExponential(2)}\n在区间内：${IN[d.k].toFixed(1)} / 24 小时`})}
+function liqChart(){const g=document.getElementById('liq');g.innerHTML='';const n=N*24;let s=42;const rnd=()=>(s=(s*16807)%2147483647)/2147483647;
+ const L=50,R=1100,T=15,B=205,y=v=>B-(B-T)*(Math.log10(v)-14)/3;
+ for(const e of [14,15,16,17]){el('line',{x1:L,x2:R,y1:y(10**e),y2:y(10**e),stroke:'#edf0f3'},g);el('text',{x:L-6,y:y(10**e)+4,'text-anchor':'end','font-size':10,fill:'#8a99a8'},g).textContent='1e'+e}
+ let d='',pen=false;for(let i=0;i<n;i++){const r=rnd(),v=i%97===60?null:10**(14.2+2*r*r);const x=L+(R-L)*i/(n-1);
+  if(v===null){pen=false;continue}d+=(pen?'L':'M')+x.toFixed(1)+' '+y(v).toFixed(1);pen=true}
+ el('path',{d,fill:'none',stroke:'#2a9d8f','stroke-width':1},g);
+ for(let i=0;i<N;i+=N<=7?1:N<=14?2:5){const dd=new Date(END);dd.setDate(dd.getDate()-(N-1-i));el('text',{x:L+(R-L)*i/N,y:B+16,'font-size':10,fill:'#66788a'},g).textContent=md(dd)}}
+function render(){feeChart();posChart('pos1',1,2.76e13,IN1,500,[0,100,200,300,400]);posChart('pos10',10,3.32e12,IN10,100,[0,25,50,75]);liqChart();const st=S==='stale';document.getElementById('stale').style.display=st?'block':'none';
+ document.getElementById('statsTime').textContent=st?'2026-10-30 13:00（UTC+8）':'2026-10-30 16:00（UTC+8）';
+ document.getElementById('fee24sub').innerHTML=`USDC，协议抽成前<br>LP 净额 10,620.67 · 成交量 5,310,334<br>来源：Cetus 官方统计 · 采样 ${st?'13:00 <b style="color:#a12622">数据过期</b>':'16:00'}`;
+ const gt=S==='diff'?4885507:5308742,dev=(5310334-gt)/5310334*100,bad=Math.abs(dev)>5;
+ document.getElementById('check').innerHTML=`<span title="Cetus 24H 成交量：5,310,334\nGeckoTerminal 最近 24 根 K 线：${fmt0(gt)}\n两者窗口切法不同，±5% 以内视为一致">核对 GeckoTerminal：${bad?'<b style="color:#a12622">⚠ 数据源不一致</b>':'<span style="color:#2a8a4a">✓ 一致</span>'} 偏差 ${dev.toFixed(2)}%</span>`}
+document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{N=+b.dataset.n;document.querySelectorAll('.seg button').forEach(x=>x.classList.toggle('on',x===b));render()});
+document.querySelectorAll('.proto button').forEach(b=>b.onclick=()=>{S=b.dataset.s;document.querySelectorAll('.proto button').forEach(x=>x.classList.toggle('on',x===b));render()});
+render();
+</script></body></html>

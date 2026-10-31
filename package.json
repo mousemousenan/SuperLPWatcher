@@ -1,0 +1,6 @@
+{
+  "name": "cetus-pool-revenue-dashboard",
+  "private": true,
+  "type": "module",
+  "description": "Local Cetus USDC/SUI pool revenue dashboard"
+}

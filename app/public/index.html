@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>收入看板</title>
+<style>
+body{margin:0;font-family:system-ui,"Microsoft YaHei",sans-serif;background:#f4f5f7;color:#1f2933;font-size:14px}
+header{background:#fff;padding:14px 24px;border-bottom:1px solid #e3e6ea;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:18px;margin:0}.meta{color:#66788a;font-size:12px;text-align:right;line-height:1.6}
+.stale{display:none;background:#fdecea;color:#a12622;padding:8px 24px;font-size:13px}
+main{max-width:1180px;margin:0 auto;padding:16px 24px}
+section{background:#fff;border:1px solid #e3e6ea;border-radius:8px;padding:16px 20px;margin-bottom:16px}
+h2{font-size:15px;margin:0 0 12px}.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.card{border:1px solid #edf0f3;border-radius:6px;padding:10px 12px}.lbl{color:#66788a;font-size:12px}
+.val{font-size:20px;font-weight:600;margin:4px 0}.sub{color:#66788a;font-size:12px;line-height:1.5}
+.addr{font-family:monospace;font-size:13px}a{color:#1a6fd6;text-decoration:none}
+table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #edf0f3}th{color:#66788a;font-weight:500;font-size:12px}
+.tip{display:inline-block;width:14px;height:14px;border-radius:50%;background:#dfe4ea;color:#4a5b6c;font-size:11px;text-align:center;line-height:14px;cursor:help}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px}.seg button{border:1px solid #cfd6de;background:#fff;padding:3px 10px;cursor:pointer}.seg button.on{background:#1a6fd6;color:#fff;border-color:#1a6fd6}
+.note{color:#66788a;font-size:12px;margin-top:6px}.formula{grid-column:span 2;background:#f7f9fb;border-left:3px solid #1a6fd6;padding:8px 12px;font-size:12px;line-height:1.8;color:#3d4f61}.formula code{background:#e8eef5;padding:1px 5px;border-radius:3px}
+svg{width:100%;height:240px}.legend span{margin-right:12px;font-size:12px;color:#66788a}
+button.link{border:0;background:transparent;color:#1a6fd6;cursor:pointer;font:inherit;padding:0}
+</style></head><body>
+<header><h1 id="title">收入看板</h1><div class="meta" id="meta"></div></header>
+<div class="stale" id="stale"></div>
+<main>
+<section><h2>池子基本信息</h2><div class="grid" id="basics"></div><table id="incentives"></table></section>
+<section><h2>池子收入信息</h2><div class="grid" id="revenue"></div></section>
+<section><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">历史趋势</h2>
+<div class="seg" id="range"><button data-n="7" class="on">近 7 天</button><button data-n="14">近 14 天</button><button data-n="30">近 30 天</button></div></div>
+<div class="legend" style="margin-top:10px"><span>■ 正常（24 根 K 线）</span><span style="color:#8fb3e8">▨ 不完整（K 线少于 24 根）</span><span style="color:#a12622">缺失</span>
+<span style="float:right">每日曲线来源：GeckoTerminal 小时 K 线，按 UTC+8 自然日汇总，首次运行回补 30 天</span></div>
+<div class="charts" style="margin-top:8px">
+<div style="grid-column:span 2"><div class="lbl">每日全池手续费（USDC，协议抽成前）</div><svg id="fee" viewBox="0 0 560 240"></svg>
+<div class="note" id="feeNote"></div></div>
+<div><div class="lbl" id="pos1Label"></div><svg id="pos1" viewBox="0 0 560 240"></svg></div>
+<div><div class="lbl" id="pos10Label"></div><svg id="pos10" viewBox="0 0 560 240"></svg></div>
+<div class="formula" id="formula"></div>
+<div style="grid-column:span 2"><div class="lbl">整点快照活跃流动性 L（原始单位，对数刻度）</div><svg id="liq" viewBox="0 0 1120 240"></svg>
+<div class="note">快照 L 是整点取样，一周内可相差约 100 倍；不能用“快照 L × 时长”反推手续费。断开处为缺失整点。</div></div>
+</div></section></main>
+<script>
+const ns="http://www.w3.org/2000/svg";
+const el=(tag, attrs, parent)=>{const node=document.createElementNS(ns, tag); for (const key in attrs) node.setAttribute(key, attrs[key]); if (parent) parent.appendChild(node); return node;};
+const esc=(value)=>String(value==null?"":value).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const escAttr=(value)=>esc(value).replace(/"/g,"&quot;");
+const num=(value, digits)=>{ if(value==null||!Number.isFinite(Number(value))) return null; return Number(value).toLocaleString("en-US",{minimumFractionDigits:digits,maximumFractionDigits:digits}); };
+const fmt0=(value)=>value==null?"—":Math.round(Number(value)).toLocaleString("en-US");
+const compactUsd=(value)=>{ if(value==null) return "—"; if(Math.abs(value)>=10000){ const wan=value/10000; return "$"+(wan>=10?wan.toFixed(0):wan.toFixed(1))+" 万"; } return "$"+fmt0(value); };
+const rawL=(text)=>{ const n=Number(text); if(!Number.isFinite(n)) return esc(text); return n.toExponential(2).replace("e+","e"); };
+const clock=(label)=>label?label.slice(11,16):"";
+const shortDate=(date)=>String(date||"").slice(5);
+const groupInt=(value)=>String(value).replace(/\B(?=(\d{3})+(?!\d))/g,",");
+let pool=null, revenue=null, series=null, N=7;
+function axis(maxValue){
+  const max=maxValue>0?maxValue:1;
+  const raw=max/4;
+  const pow=Math.pow(10, Math.floor(Math.log10(raw)));
+  const unit=raw/pow;
+  const step=(unit<=1?1:unit<=2?2:unit<=5?5:10)*pow;
+  const top=Math.ceil(max/step)*step;
+  const ticks=[];
+  for(let y=0; y<=top+step*0.001; y+=step) ticks.push(Number(y.toPrecision(12)));
+  return {max: top, ticks};
+}
+function barKind(point, value){
+  if(value==null||point.status==="缺失"||point.status==="数据不足") return "empty";
+  if(point.status==="不完整") return "partial";
+  return "ok";
+}
+function emptyText(point){
+  if(point.status==="缺失") return "缺失";
+  if(point.status==="不完整") return "不完整";
+  return point.status||"数据不足";
+}
+function bars(id, points, val, max, ticks, fmt, tip){
+  const g=document.getElementById(id);
+  g.innerHTML="";
+  const count=points.length||1;
+  const L=50,R=550,T=15,B=205,w=(R-L)/count;
+  for(const y of ticks){
+    const yy=B-(B-T)*y/max;
+    el("line",{x1:L,x2:R,y1:yy,y2:yy,stroke:"#edf0f3"},g);
+    el("text",{x:L-6,y:yy+4,"text-anchor":"end","font-size":10,fill:"#8a99a8"},g).textContent=fmt(y);
+  }
+  points.forEach((d,i)=>{
+    const x=L+i*w;
+    const value=val(d);
+    const kind=barKind(d, value);
+    if(kind==="empty"){
+      el("text",{x:x+w/2,y:B-6,"text-anchor":"middle","font-size":10,fill:"#a12622"},g).textContent=emptyText(d);
+    } else {
+      const h=max>0?(B-T)*value/max:0;
+      const rect=el("rect",{x:x+w*0.18,y:B-h,width:w*0.64,height:Math.max(h,0),fill:kind==="ok"?"#1a6fd6":"#8fb3e8","stroke-dasharray":kind==="partial"?"3 2":"",stroke:kind==="partial"?"#1a6fd6":""},g);
+      el("title",{},rect).textContent=tip(d);
+    }
+    if(count<=14||i%3===0) el("text",{x:x+w/2,y:B+16,"text-anchor":"middle","font-size":10,fill:"#66788a"},g).textContent=shortDate(d.date);
+  });
+}
+function liqChart(points){
+  const g=document.getElementById("liq");
+  g.innerHTML="";
+  const L=50,R=1100,T=15,B=205;
+  const values=points.map((p)=>p.liquidity==null?null:Number(p.liquidity));
+  const positive=values.filter((v)=>v>0);
+  if(!positive.length){ el("text",{x:L,y:40,"font-size":12,fill:"#a12622"},g).textContent="缺失"; return; }
+  let minE=Math.floor(Math.log10(Math.min.apply(null, positive)));
+  let maxE=Math.ceil(Math.log10(Math.max.apply(null, positive)));
+  if(maxE<=minE) maxE=minE+1;
+  const y=(v)=>B-(B-T)*(Math.log10(v)-minE)/(maxE-minE);
+  for(let e=minE;e<=maxE;e+=1){
+    el("line",{x1:L,x2:R,y1:y(Math.pow(10,e)),y2:y(Math.pow(10,e)),stroke:"#edf0f3"},g);
+    el("text",{x:L-6,y:y(Math.pow(10,e))+4,"text-anchor":"end","font-size":10,fill:"#8a99a8"},g).textContent="1e"+e;
+  }
+  const n=points.length;
+  let d="", pen=false;
+  points.forEach((p,i)=>{
+    const v=p.liquidity==null?null:Number(p.liquidity);
+    const x=n===1?(L+R)/2:L+(R-L)*i/(n-1);
+    if(!(v>0)){ pen=false; return; }
+    d+=(pen?"L":"M")+x.toFixed(1)+" "+y(v).toFixed(1);
+    pen=true;
+  });
+  el("path",{d,fill:"none",stroke:"#2a9d8f","stroke-width":1},g);
+  const mid=[];
+  points.forEach((p,i)=>{ if(p.label&&p.label.slice(11,16)==="00:00") mid.push(i); });
+  const step=mid.length>14?5:mid.length>7?2:1;
+  mid.forEach((i,k)=>{
+    if(k%step!==0) return;
+    const x=n===1?(L+R)/2:L+(R-L)*i/(n-1);
+    el("text",{x,y:B+16,"font-size":10,fill:"#66788a"},g).textContent=points[i].label.slice(5,10);
+  });
+}
+function feeTip(d){
+  return d.date+"："+fmt0(d.fee)+" USDC\n美元成交量：$"+fmt0(d.volumeUsd)+"\nK 线："+d.candleCount+" 根\n状态："+d.status;
+}
+function posTip(d){
+  const open=d.openPrice==null?"—":Number(d.openPrice).toFixed(4);
+  const low=d.pa==null?"—":Number(d.pa).toFixed(4);
+  const high=d.pb==null?"—":Number(d.pb).toFixed(4);
+  const fee=d.fee==null?"—":Number(d.fee).toFixed(1);
+  const lraw=d.lRaw==null?"—":Number(d.lRaw).toExponential(2);
+  const hours=d.inRangeHours==null?"—":Number(d.inRangeHours).toFixed(1);
+  return d.date+"：$"+fee+"\n开仓价："+open+"\n区间："+low+" – "+high+"\nL_raw："+lraw+"\n在区间内："+hours+" / 24 小时\n状态："+d.status;
+}
+function renderCharts(){
+  const feeAxis=axis(Math.max(0, ...series.fees.map((d)=>Number(d.fee)||0)));
+  bars("fee", series.fees, (d)=>d.fee, feeAxis.max, feeAxis.ticks, (y)=>y>=1000?(y/1000)+"k":String(Math.round(y)), feeTip);
+  series.positions.forEach((position, index)=>{
+    const id=index===0?"pos1":"pos10";
+    const ax=axis(Math.max(0, ...position.points.map((d)=>Number(d.fee)||0)));
+    bars(id, position.points, (d)=>d.fee, ax.max, ax.ticks, (y)=>"$"+(y>=100?Math.round(y):Math.round(y)), posTip);
+  });
+  liqChart(series.liquidity);
+}
+function card(label, value, sub){ return "<div class=\u0022card\u0022><div class=\u0022lbl\u0022>"+label+"</div><div class=\u0022val\u0022>"+value+"</div><div class=\u0022sub\u0022>"+sub+"</div></div>"; }
+function hiddenValue(status, text){ return status==="数据不足"||status==="价格缺失"?status:text; }
+function renderBasics(){
+  document.getElementById("title").textContent=pool.name+" 池 · 收入看板";
+  const meta=pool.sources.map((s)=>esc(s.name)+"最后采集："+(s.label?esc(s.label):"无")).join("<br>");
+  document.getElementById("meta").innerHTML=meta;
+  const fee=pool.feeRate?pool.feeRate.display:"数据不足";
+  const protocol=pool.protocolFeeRate?pool.protocolFeeRate.display:"数据不足";
+  const lp=pool.lpFeeRate?pool.lpFeeRate.display:"数据不足";
+  const addr=pool.address;
+  const short=addr.slice(0,10)+"…"+addr.slice(-8);
+  document.getElementById("basics").innerHTML=
+    "<div class=\u0022card\u0022 style=\u0022grid-column:span 2\u0022><div class=\u0022lbl\u0022>池地址</div><div class=\u0022addr\u0022 style=\u0022margin:6px 0\u0022>"+esc(short)+" <button class=\u0022link\u0022 id=\u0022copy\u0022 title=\u0022复制\u0022>⧉</button></div><div class=\u0022sub\u0022><a href=\u0022"+escAttr(pool.cetusUrl)+"\u0022 target=\u0022_blank\u0022>在 Cetus 打开 ↗</a></div></div>"+
+    card("交易手续费率", esc(fee), pool.feeRate?"Pool.fee_rate = "+esc(pool.feeRate.raw):"")+
+    card("协议抽成", esc(protocol), pool.protocolFeeRate?"GlobalConfig.protocol_fee_rate = "+esc(pool.protocolFeeRate.raw):"")+
+    card("LP 实际手续费率", esc(lp), pool.lpFeeRate?esc(pool.feeRate.display)+" × (1 − "+esc(pool.protocolFeeRate.display)+")":"");
+  document.getElementById("copy").onclick=()=>{ if(navigator.clipboard) navigator.clipboard.writeText(addr); };
+  const table=document.getElementById("incentives");
+  let html="<tr><th>激励代币</th><th>结算方式</th><th>每秒发放</th><th>每天发放</th></tr>";
+  if(!pool.incentives.length){ html+="<tr><td colspan=\u00224\u0022>"+esc(pool.incentiveStatus)+"</td></tr>"; }
+  else { pool.incentives.forEach((item, index)=>{
+    html+="<tr><td>"+esc(item.symbol)+"</td>";
+    if(index===0) html+="<td rowspan=\u0022"+pool.incentives.length+"\u0022 class=\u0022sub\u0022>"+esc(item.settlement)+"</td>";
+    html+="<td>"+(item.perSecond==null?esc(item.status):esc(item.perSecond.toPrecision(4)))+"</td><td>"+(item.perDay==null?esc(item.status):esc(fmt0(item.perDay)))+"</td></tr>";
+  }); }
+  table.innerHTML=html;
+}
+function depthTip(depth){
+  const price=Number(depth.price).toFixed(4);
+  const low=Number(depth.priceLow).toFixed(4);
+  const high=Number(depth.priceHigh).toFixed(4);
+  const width=(depth.width*100).toFixed(2);
+  return "当前 tick 段：["+depth.tickLower+", "+depth.tickUpper+")，SUI 价格 "+low+" – "+high+"，段宽 "+width+"%\n"+
+    "整段深度：约 "+fmt0(depth.usdc)+" USDC，或 "+fmt0(depth.sui)+" SUI（≈ $"+fmt0(depth.suiValue)+"）\n"+
+    "从当前价 "+price+" 出发：\n"+
+    "· 跌到 "+low+" 前，池子可付出约 "+fmt0(depth.toLowerUsdc)+" USDC\n"+
+    "· 涨到 "+high+" 前，池子可付出约 "+fmt0(depth.toUpperSui)+" SUI（≈ $"+fmt0(depth.toUpperSui*depth.price)+"）\n\n"+
+    "段内 L 不变，所以是精确值；但它只是 L 的换算，会随 L 一起大幅变化。\n"+
+    "段宽由 tick_spacing（本池 "+depth.tickSpacing+"）决定，不同池子之间不能直接比较。";
+}
+function exampleTip(ex){
+  if(ex.status==="数据不足"||ex.openPrice==null) return ex.label+"\n"+ex.status;
+  return ex.label+"\n开仓价 "+Number(ex.openPrice).toFixed(4)+"\n区间 "+Number(ex.pa).toFixed(4)+" – "+Number(ex.pb).toFixed(4)+"（tick "+ex.tickLow+" – "+ex.tickHigh+"）\nL_raw ≈ "+Number(ex.lRaw).toExponential(2)+"\n开仓约 "+fmt0(ex.sui)+" SUI + "+fmt0(ex.usdc)+" USDC\n在区间内 "+Number(ex.inRangeHours).toFixed(1)+" / 24 小时\n状态："+ex.status+"\n按在区间内时间折算，与下方每日曲线口径相同，不计自身稀释、激励和无常损失。";
+}
+function exampleLine(ex){
+  if(ex.status==="数据不足"||ex.fee==null) return esc(ex.label)+" "+esc(ex.status);
+  const mark=ex.label.replace("$10,000 ","");
+  const extra=ex.status==="不完整"?" · 不完整":"";
+  return esc(mark)+" ≈ <b>$"+Number(ex.fee).toFixed(1)+"</b>（在区间内 "+Number(ex.inRangeHours).toFixed(1)+" h）"+extra;
+}
+function renderRevenue(){
+  const price=revenue.price, liq=revenue.liquidity, depth=revenue.depth, fee=revenue.fee24h, rec=revenue.reconcile;
+  const priceVal=hiddenValue(price.status, num(price.value,4));
+  const priceSub=price.status==="正常"?"USDC / SUI<br>checkpoint "+groupInt(price.checkpoint)+" · "+clock(price.label):"";
+  let liqVal=hiddenValue(liq.status, rawL(liq.raw));
+  let liqSub="原始单位，覆盖当前 tick 的仓位之和";
+  if(depth.status==="正常"){
+    const width=(depth.width*100).toFixed(2);
+    liqSub+="<br><span style=\u0022color:#1f2933\u0022>推过当前一格（"+width+"%）约需 "+compactUsd(depth.usdc)+"成交</span> <span class=\u0022tip\u0022 title=\u0022"+escAttr(depthTip(depth))+"\u0022>i</span>";
+    liqSub+="<br>checkpoint "+groupInt(price.checkpoint)+" · "+clock(price.label);
+  } else liqSub+="<br>"+esc(depth.status);
+  const feeVal=fee.status==="数据不足"||fee.gross==null?"数据不足":num(fee.gross,2);
+  let feeSub="USDC，协议抽成前";
+  if(fee.gross!=null){
+    feeSub+="<br>LP 净额 "+num(fee.lpNet,2)+" · 成交量 "+fmt0(fee.volume);
+    const staleMark=fee.status==="数据过期"?" <b style=\u0022color:#a12622\u0022>数据过期</b>":"";
+    feeSub+="<br>来源："+esc(fee.source)+" · 窗口"+esc(fee.window)+" · 采样 "+esc(fee.sampledAtLabel||"")+staleMark;
+  }
+  let check="核对 GeckoTerminal：数据不足";
+  if(rec.status==="一致"||rec.status==="数据源不一致"){
+    const bad=rec.status==="数据源不一致";
+    const mark=bad?"<b style=\u0022color:#a12622\u0022>⚠ 数据源不一致</b>":"<span style=\u0022color:#2a8a4a\u0022>✓ 一致</span>";
+    const title="Cetus 24H 成交量："+fmt0(rec.cetusVol)+"\nGeckoTerminal 最近 24 根 K 线："+fmt0(rec.candleVol)+"\n两者窗口切法不同，±5% 以内视为一致";
+    check="<span title=\u0022"+escAttr(title)+"\u0022>核对 GeckoTerminal："+mark+" 偏差 "+(rec.deviation*100).toFixed(2)+"%</span>";
+  }
+  const inc=revenue.incentives24h;
+  const incVal=hiddenValue(inc.status, num(inc.totalUsd,1));
+  let incSub="USDC";
+  inc.tokens.forEach((token)=>{ incSub+="<br>"+esc(token.symbol)+" "+fmt0(token.amount)+" 个"+(token.usd==null?" "+esc(token.status):" ≈ "+num(token.usd,1)); });
+  if(inc.startLabel) incSub+="<br>窗口 "+inc.startLabel.slice(5,16)+" – "+inc.endLabel.slice(5,16)+"（UTC+8）"+(inc.status==="不完整"?" · 不完整":"");
+  const unit=revenue.unitFee24h;
+  const unitVal=unit.status==="数据不足"||unit.per1e12==null?"数据不足":num(unit.per1e12,2);
+  const unitTip="1 单位原始 L 在窗口内一直处于活跃状态能分到的 LP 手续费（已扣协议抽成），由 fee_growth_global 首尾差值计算。原始 L = 人类单位 L × √(10^"+pool.decimalsA+" × 10^"+pool.decimalsB+")。";
+  let unitSub="USDC / 每 1e12 原始 L";
+  if(unit.startLabel) unitSub+="<br>窗口 "+unit.startLabel.slice(5,16)+" – "+unit.endLabel.slice(5,16)+"（UTC+8）"+(unit.status==="不完整"?" · 不完整":"");
+  const exTip=revenue.examples.map(exampleTip).join("\n\n");
+  unitSub+="<div class=\u0022sub\u0022 style=\u0022margin-top:6px;padding-top:6px;border-top:1px dashed #e3e6ea;color:#1f2933\u0022>示例：$10,000 仓位 24h 手续费（按在区间内时间折算） <span class=\u0022tip\u0022 title=\u0022"+escAttr(exTip)+"\u0022>i</span><br>"+revenue.examples.map(exampleLine).join(" · ")+"</div>";
+  const unitLabel="24h 单位 L 手续费 <span class=\u0022tip\u0022 title=\u0022"+escAttr(unitTip)+"\u0022>i</span>";
+  document.getElementById("revenue").innerHTML=
+    card("当前价格", esc(priceVal), priceSub)+
+    card("当前活跃流动性 L", esc(liqVal), liqSub)+
+    card("24h 全池手续费", esc(feeVal), feeSub+"<div class=\u0022sub\u0022 id=\u0022check\u0022 style=\u0022margin-top:6px;padding-top:6px;border-top:1px dashed #e3e6ea\u0022>"+check+"</div>")+
+    card("24h 激励收入", esc(incVal), incSub)+
+    card(unitLabel, esc(unitVal), unitSub);
+  const rate=pool.feeRate?pool.feeRate.display:"交易手续费率";
+  document.getElementById("feeNote").textContent="= 当日小时 K 线美元成交量之和 × "+rate+"（取当日最后一个整点快照的 fee_rate）。数据来自 GeckoTerminal。悬停查看数值。";
+  const spacing=pool.tickSpacing==null?"tick_spacing":pool.tickSpacing;
+  document.getElementById("pos1Label").textContent=series.positions[0].label+" 仓位每日手续费（USDC，按在区间内时间折算）";
+  document.getElementById("pos10Label").textContent=series.positions[1].label+" 仓位每日手续费（USDC，按在区间内时间折算）";
+  document.getElementById("formula").innerHTML="<b>计算方法</b><br>"+
+    "① 每天 00:00（UTC+8）按当时价格重新开一个 $10,000 仓位，区间边界向外对齐到 "+spacing+" tick 的整数倍，当天 L_raw 不变。<br>"+
+    "② 当日手续费 = <code>Σ 当天 24 小时 [ L_raw × 该小时单位 L 手续费 × 该小时在区间内比例 ]</code><br>"+
+    "③ 该小时单位 L 手续费 = 相邻两个整点快照的 fee_growth_global 差值（a 侧按 USDC，b 侧按该小时 SUI 价格折算）。<br>"+
+    "④ 在区间内比例 = <code>该小时 K 线 [最低, 最高] 与仓位区间重叠的长度 ÷ (最高 − 最低)</code>，假设一小时内价格均匀分布、手续费均匀产生。<br>"+
+    "不计自身加入后的稀释、激励收入和无常损失；无常损失归入成本部分另算。";
+}
+function showStale(){
+  const banner=document.getElementById("stale");
+  if(revenue.stale&&revenue.staleBanner){ banner.style.display="block"; banner.textContent="⚠ "+revenue.staleBanner; }
+  else { banner.style.display="none"; banner.textContent=""; }
+}
+function render(){ renderBasics(); renderRevenue(); renderCharts(); showStale(); }
+async function loadSeries(){
+  const response=await fetch("/api/series?n="+N);
+  if(!response.ok) throw new Error("series "+response.status);
+  series=await response.json();
+  renderCharts();
+  if(pool) renderRevenue();
+}
+async function load(){
+  const [poolRes, revenueRes, seriesRes]=await Promise.all([
+    fetch("/api/pool"), fetch("/api/revenue"), fetch("/api/series?n="+N)
+  ]);
+  if(!poolRes.ok||!revenueRes.ok||!seriesRes.ok) throw new Error("api");
+  pool=await poolRes.json();
+  revenue=await revenueRes.json();
+  series=await seriesRes.json();
+  render();
+}
+document.getElementById("range").onclick=(event)=>{
+  const button=event.target.closest("button");
+  if(!button) return;
+  N=Number(button.dataset.n);
+  document.querySelectorAll("#range button").forEach((item)=>item.classList.toggle("on", item===button));
+  loadSeries().catch((error)=>{ document.getElementById("stale").style.display="block"; document.getElementById("stale").textContent=String(error); });
+};
+load().catch((error)=>{ const banner=document.getElementById("stale"); banner.style.display="block"; banner.textContent=String(error); });
+</script></body></html>
